@@ -38,7 +38,7 @@ app.post('/upload', function(req, res) {
     Upload path
   * {RegExp} ``options.acceptFileTypes``  
     The regular expression for allowed file types, matches against either file type or file name
-  * {number} ``[options.maxNumberOfFiles=Infinity]``
+  * {number} ``[options.maxNumberOfFiles=Infinity]``  
     The limit of files to be uploaded
   * {number} ``[options.maxFileSize=Infinity]``  
     The maximum allowed file size in bytes
