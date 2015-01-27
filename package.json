@@ -1,0 +1,38 @@
+{
+  "name": "upload-file",
+  "version": "1.0.1",
+  "description": "Simplified file upload",
+  "main": "upload.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/douzi8/upload-file.git"
+  },
+  "author": "douzi <liaowei08@gmail.com>",
+  "license": "ISC",
+  "keywords": [
+    "upload",
+    "uploads",
+    "file",
+    "file upload",
+    "multipart"
+  ],
+  "bugs": {
+    "url": "https://github.com/douzi8/upload-file/issues"
+  },
+  "homepage": "https://github.com/douzi8/upload-file",
+  "devDependencies": {
+    "express": "^4.11.0",
+    "grunt": "^0.4.5",
+    "grunt-contrib-jshint": "^0.10.0",
+    "jade": "^1.9.0",
+    "serve-static": "^1.8.1"
+  },
+  "dependencies": {
+    "file-system": "^2.0.0",
+    "streamsearch": "^0.1.2",
+    "utils-extend": "^1.0.7"
+  }
+}
