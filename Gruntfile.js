@@ -3,7 +3,7 @@ module.exports = function(grunt) {
   grunt.initConfig({
     jshint: {
       all: [
-        './upload-stream.js'
+        './upload.js'
       ]
     }
   });

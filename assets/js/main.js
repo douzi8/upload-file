@@ -9,14 +9,14 @@ $('#fileupload').fileupload({
   forceIframeTransport: false,
   url: '/upload',
   acceptFileTypes: /(\.|\/)(gif|jpe?g|png|html|css)$/i,
-  progress: function(e, data) {
-    d(data);
-  },
+  progressInterval: 10,
   progressall: function(e, data) {
     d(data);
   },
   fail: function(e, data) {
-    d(e);
-    d(data);
+    d('fail');
+  },
+  done: function(e, data) {
+    d('success');
   }
 });

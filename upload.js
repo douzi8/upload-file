@@ -1,15 +1,11 @@
-var Writable = require('stream').Writable;
 var util = require('utils-extend');
 var fs = require('file-system');
 var path = require('path');
 var StreamSearch = require('streamsearch');
 
-util.inherits(Upload, Writable);
-
 // Some options borrow from jQuery.fileupload
-function Upload(options) {
+function Upload(req, options) {
   options = util.extend({
-    headers: {},
     minFileSize: 0,
     maxFileSize: Infinity,
     maxNumberOfFiles: Infinity,
@@ -28,11 +24,12 @@ function Upload(options) {
     acceptFileTypes: /(\.|\/)(gif|jpe?g|png)$/i,
     */
   }, options);
-  Writable.call(this, options);
 
-  var contentType = options.headers['content-type'];
+  this.req = req;
+
+  var contentType = this.req.headers['content-type'];
   if (!contentType) {
-    throw new Error('Request header required');
+    throw new Error(options.messages.invalidRequest);
   }
   var boundary = '\r\n--' + getBoundary(contentType);
 
@@ -43,16 +40,17 @@ function Upload(options) {
   this._chunks = [];
   this._parts = [];
   this.search = new StreamSearch(new Buffer(boundary));
-  this.on('finish', this._onfinish);
+  this.req
+      .on('data', this._onData.bind(this))
+      .on('end', this._onEnd.bind(this));
   this.search.on('info', this._oninfo.bind(this));
   // Make dir
   fs.mkdirSync(options.dest);
 }
 
-Upload.prototype._write = function(chunk, encoding, cb) {
+Upload.prototype._onData = function(chunk) {
   this._chunks.push(chunk);
   this.size += chunk.length;
-  cb();
 };
 
 Upload.prototype._oninfo = function(isMatch, data, start, end) {
@@ -109,7 +107,7 @@ Upload.prototype._validate = function(file) {
   return true;
 };
 
-Upload.prototype._onfinish = function() {
+Upload.prototype._onEnd = function() {
   var buffer = new Buffer(this.size);
   var chunks = this._chunks; 
 
@@ -122,7 +120,7 @@ Upload.prototype._onfinish = function() {
 
   this.search.push(buffer);
 
-  if (!this._parts.length) {
+  if (!this.err && !this._parts.length) {
     this.err = this.options.messages.invalidRequest;
   }
 

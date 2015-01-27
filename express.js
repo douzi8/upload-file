@@ -4,7 +4,6 @@ var Upload = require('./upload');
 var path = require('path');
 var serveStatic = require('serve-static');
 
-
 app.use(serveStatic('assets', { index: false }));
 
 app.set('view engine', 'jade');
@@ -14,9 +13,9 @@ app.get('/', function (req, res) {
 });
 
 app.post('/upload', function(req, res) {
-  var upload = new Upload({
+  new Upload(req, {
     headers: req.headers,
-    maxNumberOfFiles: 2,
+    maxNumberOfFiles: 3,
     // Byte unit
     maxFileSize: 100 * 1024,
     dest: 'uploads/path',
@@ -29,7 +28,6 @@ app.post('/upload', function(req, res) {
       res.send(err || 'File uploaded successfully');
     }
   });
-  req.pipe(upload);
 });
 
 var server = app.listen(8000, function () {
