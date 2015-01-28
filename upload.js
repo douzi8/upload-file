@@ -108,15 +108,7 @@ Upload.prototype._validate = function(file) {
 };
 
 Upload.prototype._onEnd = function() {
-  var buffer = new Buffer(this.size);
-  var chunks = this._chunks; 
-
-  // Copy all chunks to buffer
-  for (var i = 0, pos = 0, l = chunks.length; i < l; i++) {
-    var chunk = chunks[i];
-    chunk.copy(buffer, pos);
-    pos += chunk.length;
-  }
+  var buffer = Buffer.concat(this._chunks, this.size);
 
   this.search.push(buffer);
 

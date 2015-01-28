@@ -18,6 +18,7 @@ app.post('/upload', function(req, res) {
     maxNumberOfFiles: 3,
     // Byte unit
     maxFileSize: 100 * 1024,
+    acceptFileTypes: /(\.|\/)(gif|jpe?g|png|css)$/i,
     dest: 'uploads/path',
     rename: function(filename) {
       var d = Date.now();
