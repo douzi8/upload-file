@@ -13,22 +13,33 @@ app.get('/', function (req, res) {
 });
 
 app.post('/upload', function(req, res) {
-  new Upload(req, {
-    headers: req.headers,
-    maxNumberOfFiles: 3,
+  var upload = new Upload({
+    maxNumberOfFiles: 10,
     // Byte unit
-    maxFileSize: 100 * 1024,
+    maxFileSize: 1000 * 1024,
     acceptFileTypes: /(\.|\/)(gif|jpe?g|png|css)$/i,
     dest: 'uploads/path',
-    rename: function(filename) {
-      var d = Date.now();
-      return d + path.extname(filename);
-    },
-    done: function(err, files) {
-      console.log(files);
-      res.send(err || 'File uploaded successfully');
-    }
+    minNumberOfFiles: 0
   });
+
+  upload.on('end', function(fields, files) {
+    console.log(fields);
+    console.log(files);
+
+    if (!fields.channel) {
+      this.cleanup();
+      this.error('Channel can not be empty');
+      return;
+    }
+
+    res.send('ok')
+  });
+
+  upload.on('error', function(err) {
+    res.send(err);
+  });
+
+  upload.parse(req);
 });
 
 var server = app.listen(8000, function () {

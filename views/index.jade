@@ -4,9 +4,30 @@ html
   body
     h2 form upload
     form(action='/upload', method='post', enctype="multipart/form-data")
-      input(type='file', name='img')
+      input(type='file', name='file')
+      | signle file
       br
-      input(type='text', name='txt1')
+      input(type='file', name='files', multiple)
+      | multiple files
+      br
+      input(type='file', name='directory', webkitdirectory, directory)
+      | directory
+      br
+      input(name='channel')
+      span(style='margin-left:20px;') single value
+      br
+      input(type='text', name='city')
+      input(type='text', name='city')
+      input(type='text', name='city')
+      span(style='margin-left:20px;') array value
+      br
+      input(type='checkbox', name='checkbox[]', value='1')
+      input(type='checkbox', name='checkbox[]', value='2')
+      span(style='margin-left:20px;') array value
+      br
+      input(type='radio', name='radio', value='1')
+      input(type='radio', name='radio', value='2')
+      span(style='margin-left:20px;') single value
       br
       input(type='submit')
     h2 ajax upload

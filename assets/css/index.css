@@ -1,0 +1,11 @@
+/* css
+ * comment
+ */
+.cls:after {
+  /*k*/
+  display: bloc;
+  content: 'tt \
+  /* 123 */\
+  dd \' \
+  ';
+}

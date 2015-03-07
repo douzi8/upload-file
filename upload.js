@@ -2,146 +2,239 @@ var util = require('utils-extend');
 var fs = require('file-system');
 var path = require('path');
 var StreamSearch = require('streamsearch');
+var EventEmitter = require('events').EventEmitter;
 
 // Some options borrow from jQuery.fileupload
-function Upload(req, options) {
-  options = util.extend({
+function Upload(options) {
+  this.options = util.extend({
+    dest: '',
     minFileSize: 0,
     maxFileSize: Infinity,
     maxNumberOfFiles: Infinity,
+    minNumberOfFiles: 1,
     messages: {
       maxNumberOfFiles: 'Maximum number of files exceeded',
+      minNumberOfFiles: 'Less than minimum number of files',
       acceptFileTypes: 'File type not allowed',
       maxFileSize: 'File is too large',
       minFileSize: 'File is too small',
-      fileWriteFailed: 'File write failed',
       invalidRequest: 'Invalid request'
-    },
-    done: util.noop
+    }
     /*
     // The regular expression for allowed file types, matches
     // against either file type or file name:
     acceptFileTypes: /(\.|\/)(gif|jpe?g|png)$/i,
     */
   }, options);
+  this._isError = false;
+  this._chunks = [];
+  this.files = {};
+  this.fields = {};
+  this._writed = 0;
+  
+  fs.mkdirSync(this.options.dest);
+}
 
-  this.req = req;
+util.inherits(Upload, EventEmitter);
 
-  var contentType = this.req.headers['content-type'];
+/**
+ * @description
+ * Parse the http request
+ */
+Upload.prototype.parse = function(req) {
+  var self = this;
+  var contentType = req.headers['content-type'];
   if (!contentType) {
-    throw new Error(options.messages.invalidRequest);
+    return this.emit('error', this.options.messages.invalidRequest);
   }
   var boundary = '\r\n--' + getBoundary(contentType);
 
-  this.options = options;
-  this.err = null;
-  this.size = 0;
-  this._filesNumber = 0;
-  this._chunks = [];
-  this._parts = [];
   this.search = new StreamSearch(new Buffer(boundary));
-  this.req
-      .on('data', this._onData.bind(this))
-      .on('end', this._onEnd.bind(this));
   this.search.on('info', this._oninfo.bind(this));
-  // Make dir
-  fs.mkdirSync(options.dest);
-}
 
-Upload.prototype._onData = function(chunk) {
-  this._chunks.push(chunk);
-  this.size += chunk.length;
+  // handle request object
+  req
+    .on('data', function(chunk) {
+      self._chunks.push(chunk);
+    })
+    .on('end', function() {
+      var buffer = Buffer.concat(self._chunks);
+      var files = buffer.toString().match(/Content-Disposition:.+?filename="([^"]+)"/g);
+
+      files = files ? files.length : 0;
+      self._filesNumber = files;
+
+      if (files > self.options.maxNumberOfFiles) {
+        return self.error(self.options.messages.maxNumberOfFiles);
+      }
+
+      if (files < self.options.minNumberOfFiles) {
+        return self.error(self.options.messages.minNumberOfFiles);
+      }
+
+      self.search.push(buffer);
+
+      if (isNoneFiles(self.files)) {
+        self.emit('end', self.fields, self.files);
+      }
+    });
 };
 
-Upload.prototype._oninfo = function(isMatch, data, start, end) {
-  if (!data || this.err) return;
+Upload.prototype.error = function(msg) {
+  if (this._isError) return;
 
-  var result = data.slice(start, end);
-  var file = getFile(result);
-  var options = this.options;
+  this._isError = true;
+  this.emit('error', msg);
+};
 
-  if (file) {
-    this._filesNumber++;
+/**
+ * @description
+ * If the form is invalid, you can invoke this method for clear unnecessary file
+ */
+Upload.prototype.cleanup = function() {
+  var files = this.files;
 
-    // Validate the max number of files
-    if (this._filesNumber > options.maxNumberOfFiles) {
-      this.err = options.messages.maxNumberOfFiles;
-      return;
+  for (var i in files) {
+    var file = files[i];
+    if (Array.isArray(file)) {
+      file.forEach(function(item) {
+        if (item.filename) {
+          fs.unlink(item.path, util.noop);
+        }
+      });
+    } else if (file.filename) {
+      fs.unlink(file.path, util.noop);
     }
-
-    if (!this._validate(file)) return;
-
-    // Rename file
-    if (util.isFunction(options.rename)) {
-      filename = options.rename(file.name);
-    } else {
-      filename = file.name;
-    }
-
-    this._parts.push({
-      body: file.body,
-      type: file.type,
-      size: file.size,
-      path: path.join(options.dest, filename)
-    });    
   }
 };
 
+Upload.prototype._oninfo = function(isMatch, data, start, end) {
+  if (!data || !isMatch) return;
+
+  var result = data.slice(start, end);
+
+  this._parsePart(result);
+};
+
+Upload.prototype._parsePart = function(data) {
+  var result = splitHeaderBody(data);
+  var header = result.header.toString();
+  var disposition = header.match(/Content-Disposition:.+/);
+  var options = this.options;
+
+  if (!disposition) {
+    return this.error(options.messages.invalidRequest);
+  }
+
+  disposition = disposition[0];
+  var name = disposition.match(/name="([^"]+)"/);
+
+  if (!name) {
+    return this.error(options.messages.invalidRequest);
+  }
+
+  name = name[1];
+
+  var filename = disposition.match(/filename="([^"]*)"/);
+  
+  if (!filename) {
+    this._parseValue(this.fields, name, result.body.toString());
+    return;
+  }
+
+  filename = filename[1];
+  var type = header.match(/Content-Type:\s*(.+)/);
+  var file = {
+    filename: filename,
+    path: path.join(options.dest, filename),
+    type: type ? type[1] : '',
+    size: result.body.length
+  };
+
+  this._parseValue(this.files, name, file);
+
+  // empty input file
+  if (!filename) return;
+
+  // Rename file
+  if (util.isFunction(options.rename)) {
+    file.filename = options.rename.call(this, name, file);
+  }
+
+  if (!this.validate(file)) return;
+
+  this._write(file.filename, result.body);
+};
+
+// Value is array, like key[]=1&key[]=2, and key=1&key=2
+Upload.prototype._parseValue = function(obj, name, value) {
+  var isArray = /\[\]$/.test(name);
+
+  if (isArray) {
+    name = name.replace(/\[\]$/, '');
+  }
+
+  if (util.isUndefined(obj[name])) {
+    if (isArray) {
+      obj[name] = [value];
+    } else {
+      obj[name] = value;
+    }
+  } else {
+    if (Array.isArray(obj[name])) {
+      obj[name].push(value);
+    } else {
+      obj[name] = [obj[name], value];
+    }
+  }
+};
+
+Upload.prototype._write = function(filename, body) {
+  var filepath = path.join(this.options.dest, filename);
+
+  // upload folder
+  if (path.dirname(filename) !== '.') {
+    fs.mkdirSync(path.dirname(filepath));
+  }
+
+  // upload file
+  var part = fs.createWriteStream(filepath);
+  var self = this;
+
+  part.on('finish', function() {
+    self._writed++;
+    if (self._writed >= self._filesNumber) {
+      self.emit('end', self.fields, self.files);
+    }
+  });
+
+  part.on('error', function(err) {
+    self.error(err);
+  });
+
+  part.write(body);
+  part.end();
+};
+
+
 // Validate the name, type, max size and min size of each file
-Upload.prototype._validate = function(file) {
+Upload.prototype.validate = function(file) {
   var options = this.options;
 
   if (options.acceptFileTypes && 
       !(options.acceptFileTypes.test(file.type) ||
         options.acceptFileTypes.test(file.name))) {
-    this.err = options.messages.acceptFileTypes;
+    this.error(options.messages.acceptFileTypes);
     return false;
   } else if (file.size > options.maxFileSize) {
-    this.err = options.messages.maxFileSize;
+    this.error(options.messages.maxFileSize);
     return false;
   } else if (file.size < options.minFileSize) {
-    this.err = options.messages.minFileSize;
+    this.error(options.messages.minFileSize);
     return false;
   }
 
   return true;
-};
-
-Upload.prototype._onEnd = function() {
-  var buffer = Buffer.concat(this._chunks, this.size);
-
-  this.search.push(buffer);
-
-  if (!this.err && !this._parts.length) {
-    this.err = this.options.messages.invalidRequest;
-  }
-
-  if (this.err) {
-    this.options.done.call(this, this.err);
-  } else {
-    var partLength = this._parts.length;
-    var finshedCount = 0;
-    var self = this;
-    var files = [];
-
-    this._parts.forEach(function(item) {
-      var part = fs.createWriteStream(item.path);
-
-      files.push(util.pick(item, 'path', 'type', 'size'));
-      part.on('finish', function() {
-        finshedCount++;
-        if (partLength === finshedCount) {
-          self.options.done.call(self, null, files);
-        }
-      });
-      part.on('error', function() {
-        finshedCount++;
-        self.options.done.call(self, this.options.messages.fileWriteFailed);
-      });
-      part.write(item.body);
-      part.end();
-    });
-  }
 };
 
 // RFC2046
@@ -155,48 +248,56 @@ function getBoundary(contentType) {
   return '';
 }
 
-// Check file attribute, return name, type, size,
-// otherwise return false
-function getFile(data) {
-  var result = splitHeaderBody(data);
-  var header = result.header.toString();
-  var name = '';
+function splitHeaderBody(data) {
+  // CRLF
+  var CR = 13;
+  var LF = 10;
+  var item;
+  var start;
+  
+  for (var i = 0, l = data.length - 3; i < l; i++) {
+    item = data[i];
 
-  name = header.match(/Content-Disposition:.+?filename="([^"]+)"/);
-  if (!name) return false;
-
-  name = name[1];
-  var type = header.match(/Content-Type:(\s*.+)/);
-
-  if (type) {
-    type = type[1];
-  } else {
-    type = '';
+    if (item === CR) {
+      if (data[i + 1] === LF && data[i + 2] === CR && data[i + 3] === LF) {
+        start = i;
+        break;
+      }
+    }
   }
 
-  return {
-    name: name,
-    type: type,
-    size: result.body.length,
-    body: result.body
-  };
+  if (start) {
+    return {
+      header: data.slice(0, start),
+      body: data.slice(start + 4)
+    };
+  } else {
+    return {
+      header: {
+        data: data,
+        body: new Buffer(0)
+      }
+    };
+  }
 }
 
-function splitHeaderBody(data) {
-  var s = new StreamSearch(new Buffer('\r\n\r\n'));
-  var body = [];
+function isNoneFiles(files) {
+  for (var i in files) {
+    if (Array.isArray(files[i])) {
+      var l = files[i].length;
 
-  s.on('info', function(isMatch, data, start, end) {
-    if (data) {
-      body.push(data.slice(start, end));
+      while (l--) {
+        if (files[i][l].filename) {
+          return false;
+        }
+      }
+
+    } else if (files[i].filename) {
+      return false;
     }
-  });
-  s.push(data);
+  }
 
-  return {
-    header: body[0],
-    body: body[1]
-  };
+  return true;
 }
 
 module.exports = Upload;
