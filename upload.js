@@ -12,6 +12,9 @@ function Upload(options) {
     maxFileSize: Infinity,
     maxNumberOfFiles: Infinity,
     minNumberOfFiles: 1,
+    // util.extend() does not handle RegExp Objects correctly,
+    // and would turn them into regular empty objects
+    acceptFileTypes: options.acceptFileTypes || null,
     messages: {
       maxNumberOfFiles: 'Maximum number of files exceeded',
       minNumberOfFiles: 'Less than minimum number of files',
